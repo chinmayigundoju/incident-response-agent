@@ -1,0 +1,23 @@
+[
+  {
+    "name": "recurring-db-pool",
+    "service": "checkout",
+    "expected_action": "ROLLBACK_CHECKOUT_DEMO",
+    "expected_root_cause_terms": ["pool", "v2.18"],
+    "memory_relevant": true
+  },
+  {
+    "name": "payment-latency",
+    "service": "payment",
+    "expected_action": "RESET_PAYMENT_FAULT",
+    "expected_root_cause_terms": ["payment", "latency"],
+    "memory_relevant": false
+  },
+  {
+    "name": "misleading-memory",
+    "service": "payment",
+    "expected_action": "RESET_PAYMENT_FAULT",
+    "expected_root_cause_terms": ["payment", "healthy db"],
+    "memory_relevant": false
+  }
+]

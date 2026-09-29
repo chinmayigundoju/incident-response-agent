@@ -1,0 +1,8 @@
+{
+  "name": "recurring-db-pool",
+  "title": "Recurring checkout DB pool exhaustion",
+  "service": "checkout",
+  "fault": "DB_POOL_EXHAUSTION",
+  "memory_expectation": "Recall a prior verified DB-pool incident, then verify current telemetry",
+  "expected_action": "ROLLBACK_CHECKOUT_DEMO"
+}

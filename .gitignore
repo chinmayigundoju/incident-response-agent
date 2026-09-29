@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+.pnpm-store/
+.next/
+dist/
+.idea/
+.vscode/
+*.log
+.codex-run/
+.DS_Store

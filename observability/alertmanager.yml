@@ -1,0 +1,12 @@
+route:
+  receiver: incident-response-api
+  group_wait: 2s
+  group_interval: 5s
+  repeat_interval: 30m
+
+receivers:
+  - name: incident-response-api
+    webhook_configs:
+      - url: http://api:8000/webhooks/alertmanager
+        send_resolved: true
+

@@ -1,0 +1,7 @@
+{
+  "name": "healthy-baseline",
+  "title": "Healthy baseline",
+  "service": "gateway",
+  "fault": "NORMAL",
+  "expected_action": null
+}

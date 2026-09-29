@@ -1,0 +1,8 @@
+{
+  "name": "payment-latency",
+  "title": "Payment provider latency",
+  "service": "payment",
+  "fault": "PAYMENT_LATENCY",
+  "memory_expectation": "No memory is required for the diagnosis",
+  "expected_action": "RESET_PAYMENT_FAULT"
+}

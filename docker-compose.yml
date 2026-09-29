@@ -1,0 +1,186 @@
+name: incident-response-agent
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-incident_response}
+      POSTGRES_USER: ${POSTGRES_USER:-incident_response}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://incident_response:change-me@postgres:5432/incident_response}
+      HINDSIGHT_BASE_URL: ${HINDSIGHT_BASE_URL:-}
+      HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
+      HINDSIGHT_BANK_ID: ${HINDSIGHT_BANK_ID:-demo-production-incidents}
+      HINDSIGHT_TIMEOUT_SECONDS: ${HINDSIGHT_TIMEOUT_SECONDS:-300}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GROQ_MAX_EVIDENCE_CHARS: ${GROQ_MAX_EVIDENCE_CHARS:-12000}
+      GROQ_RATE_LIMIT_MAX_WAIT_SECONDS: ${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-65}
+      PROMETHEUS_BASE_URL: http://prometheus:9090
+      LOKI_BASE_URL: http://loki:3100
+      TEMPO_BASE_URL: http://tempo:3200
+      DEMO_GATEWAY_BASE_URL: http://demo-gateway:8100
+      OBSERVABILITY_TIMEOUT_SECONDS: ${OBSERVABILITY_TIMEOUT_SECONDS:-5}
+      AGENT_TOOL_TIMEOUT_SECONDS: ${AGENT_TOOL_TIMEOUT_SECONDS:-10}
+      AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-8}
+      RECOVERY_WAIT_SECONDS: ${RECOVERY_WAIT_SECONDS:-2}
+      INCIDENT_AUTOMATION_MODE: ${INCIDENT_AUTOMATION_MODE:-assisted}
+      AUTOMATION_RECOVERY_MAX_ATTEMPTS: ${AUTOMATION_RECOVERY_MAX_ATTEMPTS:-3}
+      AUTOMATION_RECOVERY_RETRY_SECONDS: ${AUTOMATION_RECOVERY_RETRY_SECONDS:-5}
+      API_MAX_REQUEST_BYTES: ${API_MAX_REQUEST_BYTES:-1048576}
+      MUTATION_RATE_LIMIT_PER_MINUTE: ${MUTATION_RATE_LIMIT_PER_MINUTE:-30}
+      RUNBOOK_ROOT: /app/runbooks
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  demo-gateway:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+      args:
+        SERVICE: gateway
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    environment: &demo-environment
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      CHECKOUT_SERVICE_URL: http://demo-checkout:8101
+      PAYMENT_SERVICE_URL: http://demo-payment:8102
+      DB_POOL_CAPACITY: ${DB_POOL_CAPACITY:-5}
+      DB_ACQUIRE_TIMEOUT_SECONDS: ${DB_ACQUIRE_TIMEOUT_SECONDS:-0.08}
+      PAYMENT_NORMAL_DELAY_SECONDS: ${PAYMENT_NORMAL_DELAY_SECONDS:-0.05}
+      PAYMENT_FAULT_DELAY_SECONDS: ${PAYMENT_FAULT_DELAY_SECONDS:-1.0}
+    ports:
+      - "8100:8100"
+    depends_on:
+      - demo-checkout
+      - otel-collector
+
+  demo-checkout:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+      args:
+        SERVICE: checkout
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8101"]
+    environment: *demo-environment
+    ports:
+      - "8101:8101"
+    depends_on:
+      - demo-payment
+      - otel-collector
+
+  demo-payment:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+      args:
+        SERVICE: payment
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8102"]
+    environment: *demo-environment
+    ports:
+      - "8102:8102"
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.137.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - loki
+      - tempo
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+
+  loki:
+    image: grafana/loki:3.5.5
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+      - demo-gateway
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+
+volumes:
+  postgres-data:
+  tempo-data:
+  loki-data:

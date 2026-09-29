@@ -1,0 +1,8 @@
+{
+  "name": "misleading-memory",
+  "title": "Checkout symptoms resemble DB pool history but payment is slow",
+  "service": "payment",
+  "fault": "PAYMENT_LATENCY",
+  "memory_expectation": "Recall DB history but reject transfer because current DB evidence is healthy",
+  "expected_action": "RESET_PAYMENT_FAULT"
+}

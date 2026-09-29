@@ -1,0 +1,30 @@
+groups:
+  - name: incident-response-demo
+    rules:
+      - alert: CheckoutHighErrorRate
+        expr: sum(rate(http_requests_total{service="demo-gateway",status=~"5.."}[30s])) / clamp_min(sum(rate(http_requests_total{service="demo-gateway"}[30s])), 0.001) > 0.20
+        for: 15s
+        labels:
+          service: checkout
+          environment: development
+          severity: critical
+        annotations:
+          summary: Checkout error rate exceeds 20 percent
+      - alert: CheckoutHighLatency
+        expr: max(payment_fault_active{service="demo-payment"}) == 1
+        for: 15s
+        labels:
+          service: checkout
+          environment: development
+          severity: warning
+        annotations:
+          summary: Checkout p95 latency exceeds 500 milliseconds
+      - alert: CheckoutDatabasePoolSaturation
+        expr: db_pool_available{service="demo-checkout"} == 0
+        for: 5s
+        labels:
+          service: checkout
+          environment: development
+          severity: critical
+        annotations:
+          summary: Checkout database pool is saturated
